@@ -15,6 +15,8 @@ from einops import rearrange
 from .lightseq_async_attn import _lightseq_forward, _lightseq_backward
 from .async_communication import initialize_distributed, reset_global_memory_buffer
 
+import os
+
 # define a global buffer to save flash attention outputs
 # it's called global because it saves the outputs for all layers
 global_flash_attn_out_buffer = None
@@ -40,7 +42,7 @@ def clean_hook():
 
 def clear_all_buffers_at_the_end_of_training():
     # call it at the end of training 
-    global lobal_flash_attn_out_buffer
+    global global_flash_attn_out_buffer
     global_flash_attn_out_buffer = None
     global local_res_grad_buffer
     local_res_grad_buffer = None
@@ -202,7 +204,9 @@ class CheckpointFunctionEndWithFlashAttention(torch.autograd.Function):
         # write flash attention output gradients to buffer
         if ctx.layer_idx > 0:
             write_gradient_to_flash_attn_out(ctx.layer_idx-1, detached_inputs[0].grad)
-
+        free_flash_attn_out_buffer(ctx.layer_idx)
+        if os.getenv('RANK') == 0:
+            print(f"layer: {ctx.layer_idx}, MA: {torch.cuda.memory_allocated()}")
         return (None, None, None) + grads
 
 
